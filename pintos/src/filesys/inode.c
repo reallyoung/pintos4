@@ -10,7 +10,14 @@
 
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
-
+#define MAX_FILE_SIZE (1<<23)
+#define BLOCK_ENTRY_NUM 128
+struct BD{
+    block_sector_t bde[BLOCK_ENTRY_NUM];
+};
+struct BT{
+    block_sector_t bte[BLOCK_ENTRY_NUM];
+};
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk
@@ -18,7 +25,12 @@ struct inode_disk
     block_sector_t start;               /* First data sector. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
-    uint32_t unused[125];               /* Not used. */
+    block_sector_t parent;
+    int isdir;
+    block_sector_t bd;  //block directory sector
+    int bt_num;
+    int alloc_num;
+    uint32_t unused[120];               /* Not used. */
   };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -37,13 +49,27 @@ struct inode
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
+    block_sector_t parent;
+    int isdir;
+    block_sector_t bd;
+    int bt_num;
+    int alloc_num;
     struct inode_disk data;             /* Inode content. */
+    struct BD block_directory;
   };
 
 /* Returns the block device sector that contains byte offset POS
    within INODE.
    Returns -1 if INODE does not contain data for a byte at offset
    POS. */
+block_sector_t bd_index(block_sector_t s)
+{
+    return s/(BLOCK_ENTRY_NUM);
+}
+block_sector_t bt_index(block_sector_t s)
+{
+    return s%BLOCK_ENTRY_NUM;
+}
 static block_sector_t
 byte_to_sector (const struct inode *inode, off_t pos) 
 {
@@ -53,7 +79,22 @@ byte_to_sector (const struct inode *inode, off_t pos)
   else
     return -1;
 }
-
+static block_sector_t
+bd_byte_to_sector (const struct inode *inode, off_t pos)
+{
+    struct BT bt;
+    block_sector_t i;
+    i = bd_index(pos / BLOCK_SECTOR_SIZE);
+    ASSERT(inode != NULL);
+    if(pos< inode->data.length)
+    {
+       // printf("%d\n",i);
+        cache_read(inode->block_directory.bde[i], (uint8_t*)&bt, 0, BLOCK_SECTOR_SIZE);
+        return bt.bte[bt_index(pos / BLOCK_SECTOR_SIZE)];
+    }
+    else
+        return -1;
+}
 /* List of open inodes, so that opening a single inode twice
    returns the same `struct inode'. */
 static struct list open_inodes;
@@ -65,14 +106,99 @@ inode_init (void)
   list_init (&open_inodes);
   bc_init();
 }
+void close_bd(struct inode* inode)
+{
+    struct BT bt;
+    int alloc_num = inode->alloc_num;
+    block_sector_t bt_num = inode->bt_num;
+    block_sector_t sectors;
+    int i,j,k;
+    sectors = bytes_to_sectors (inode->data.length);
+    alloc_num -= 1;
+    for(i=0;bt_num > i; i++)
+    {
+        alloc_num--;
+        cache_read(inode->block_directory.bde[i], (uint8_t*)&bt, 0, BLOCK_SECTOR_SIZE);
+        for(j=0;j<BLOCK_ENTRY_NUM&&alloc_num > 0;j++)
+        {
+            free_map_release(bt.bte[j],1);
+            alloc_num--;
+        }
+        free_map_release(inode->block_directory.bde[i],1);
+    }
+    free_map_release(inode->bd,1);
+    free_map_release(inode->sector,1);
+    if(alloc_num != 0)
+        PANIC("alloc_num !=0 is %d\n",alloc_num);
+}
+bool install_bd (block_sector_t sector,struct inode_disk* di, block_sector_t s)
+{
+    struct BD bd;
+    struct BT bt;
+    block_sector_t bt_num;
+    block_sector_t alloc_num;
+    int i;
+    int j;
+    int k;
+    block_sector_t *temp;
+    static char zeros[BLOCK_SECTOR_SIZE];
+    bool success = true;
+    bt_num = bd_index(s) + 1;
+    alloc_num = 1 + bt_num + s; // bd + bt + data
+    temp = (block_sector_t*)malloc(sizeof(block_sector_t) * alloc_num);
+    for(i=0; i<alloc_num ; i++)//allocate frist
+    {
+        if(!free_map_allocate(1, &temp[i]))
+        {
+            success = false;
+            for(i = i-1;i >= 0;i --)
+                free_map_release(temp[i], 1);
+            PANIC("install_bd_fail\n");
+            goto IEND;
+        }
+    }
+    
+    //di->start = temp[--alloc_num];
+    di->bd = temp[--alloc_num];
+    di->bt_num = bt_num;
+    di->alloc_num = alloc_num + 1;
+    for(i=0;i<BLOCK_ENTRY_NUM;i++)
+        bd.bde[i]= -1;
 
+    for(i = 0; i < bt_num; i++)
+    {
+        for(j=0;j<BLOCK_ENTRY_NUM;j++)
+            bt.bte[j] = -1;
+
+        bd.bde[i] = temp[--alloc_num];
+        for(j = 0 ; j< BLOCK_ENTRY_NUM && alloc_num> 0 ;j++)
+        {
+            bt.bte[j] = temp[--alloc_num];
+            //install data
+            block_write(fs_device, bt.bte[j], zeros);
+        }
+        //install bt
+        block_write(fs_device, bd.bde[i], &bt);
+    }
+    //install bd
+    block_write(fs_device, di->bd, &bd);
+    //install disk_inode
+    block_write(fs_device, sector, di);
+    if(alloc_num != 0)
+        PANIC("alloc num is not 0 is %d\n",alloc_num);
+
+IEND:
+    free(temp);
+    return success;
+
+}
 /* Initializes an inode with LENGTH bytes of data and
    writes the new inode to sector SECTOR on the file system
    device.
    Returns true if successful.
    Returns false if memory or disk allocation fails. */
 bool
-inode_create (block_sector_t sector, off_t length)
+inode_create (block_sector_t sector, off_t length, int isdir)
 {
   struct inode_disk *disk_inode = NULL;
   bool success = false;
@@ -89,6 +215,9 @@ inode_create (block_sector_t sector, off_t length)
       size_t sectors = bytes_to_sectors (length);
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
+      disk_inode->isdir = isdir;
+      //have to change
+      /*
       if (free_map_allocate (sectors, &disk_inode->start)) 
         {
           block_write (fs_device, sector, disk_inode);
@@ -102,6 +231,9 @@ inode_create (block_sector_t sector, off_t length)
             }
           success = true; 
         } 
+        */
+     success = install_bd(sector,disk_inode, sectors);
+     //have to change
       free (disk_inode);
     }
   return success;
@@ -140,6 +272,13 @@ inode_open (block_sector_t sector)
   inode->deny_write_cnt = 0;
   inode->removed = false;
   block_read (fs_device, inode->sector, &inode->data);
+  inode->isdir = inode->data.isdir;
+  inode->parent = inode->data.parent;
+  inode->bd = inode->data.bd;
+  inode->bt_num = inode->data.bt_num;
+  inode->alloc_num = inode->data.alloc_num;
+  block_read(fs_device, inode->bd, &inode->block_directory);
+  //cache block_directory in memory for performance
   return inode;
 }
 
@@ -174,13 +313,14 @@ inode_close (struct inode *inode)
     {
       /* Remove from inode list and release lock. */
       list_remove (&inode->elem);
- 
+    //have to change
       /* Deallocate blocks if removed. */
       if (inode->removed) 
         {
-          free_map_release (inode->sector, 1);
-          free_map_release (inode->data.start,
-                            bytes_to_sectors (inode->data.length)); 
+            close_bd(inode);
+          //free_map_release (inode->sector, 1);
+          //free_map_release (inode->data.start,
+          //                  bytes_to_sectors (inode->data.length)); 
         }
 
       free (inode); 
@@ -209,7 +349,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   while (size > 0) 
     {
       /* Disk sector to read, starting byte offset within sector. */
-      block_sector_t sector_idx = byte_to_sector (inode, offset);
+      block_sector_t sector_idx = bd_byte_to_sector (inode, offset);
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
@@ -282,7 +422,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   while (size > 0) 
     {
       /* Sector to write, starting byte offset within sector. */
-      block_sector_t sector_idx = byte_to_sector (inode, offset);
+      block_sector_t sector_idx = bd_byte_to_sector (inode, offset);
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
