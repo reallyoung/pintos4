@@ -35,7 +35,11 @@ void bc_init()
     {
         init_bce(&buffer_cache[i]);
     }
+    sema_init(&ra_sema,0);
+    list_init(&ra_list);
+    lock_init(&ra_lock);
     thread_create("bc_write_behind", PRI_DEFAULT, thread_func_write_behind, NULL);
+    thread_create("read_ahead", PRI_DEFAULT, thread_func_read_ahead, NULL);
 }
 int get_bce_idx(block_sector_t s, bool pin)
 {
@@ -57,7 +61,7 @@ void get_from_block(block_sector_t s,int idx)
         PANIC("valid collision\n");
     block_read(fs_device, s, buffer_cache[idx].data);
     buffer_cache[idx].valid = true;
-    buffer_cache[idx].pinned = true;
+   // buffer_cache[idx].pinned = true;
     buffer_cache[idx].sector = s;
 }
 void bce_read(struct bce* b,const uint8_t* buffer_, off_t size, off_t ofs)
@@ -180,9 +184,38 @@ void thread_func_write_behind(void* aux UNUSED)
         }
     }
 }
-void thread_func_read_ahead (void *aux)
+void make_read_ahead(block_sector_t s)
 {
+
+}
+void thread_func_read_ahead (void *aux UNUSED)
+{
+    int idx;
+    struct list_elem *e;
+    struct ra_elem *r;
+    block_sector_t sector_idx;
     
+while(1)
+{
+    sema_down(&ra_sema);
+    lock_acquire(&ra_lock);
+    while(!list_empty(&ra_list))
+    {
+        e = list_pop_front(&ra_list);
+        r = (struct ra_elem*)list_entry(e, struct ra_elem, elem);
+        sector_idx = r->s;
+        free(r);
+        lock_acquire(&bc_lock);
+        idx = get_bce_idx(sector_idx,false);
+        if(idx == -1)
+        {   
+            idx = cache_evict();
+            get_from_block(sector_idx, idx);
+        }
+        lock_release(&bc_lock);
+    }
+    lock_release(&ra_lock);
+}   
 }
 void write_back_all()
 {

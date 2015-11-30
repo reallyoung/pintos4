@@ -571,10 +571,16 @@ tokenize (char *input_buf, char *parameters[]){
 struct thread*
 find_child (tid_t child_tid, struct thread *t){
   struct list_elem *e;
+  enum intr_level old_level = intr_disable ();
   for (e = list_begin (&t->children_list); e != list_end (&t->children_list);
-      e = list_next(e)){
+      e = list_next(e))
+  {
     if (((struct thread*)list_entry(e, struct thread, childelem))->tid == child_tid)
+    {
+      intr_set_level (old_level);
       return (struct thread*)list_entry (e, struct thread, childelem);
+    }
   }
+  intr_set_level (old_level);
   return NULL;
 }

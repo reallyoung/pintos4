@@ -242,6 +242,17 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
         }
 */
       cache_read(sector_idx, buffer + bytes_read, sector_ofs, chunk_size);
+        if(size - chunk_size > 0)
+        {
+            struct ra_elem *r;
+            r = (struct ra_elem*)malloc(sizeof(struct ra_elem));
+            r->s = sector_idx + 1;
+            lock_acquire(&ra_lock);
+            list_push_back(&ra_list,&r->elem);
+            lock_release(&ra_lock);
+            sema_up(&ra_sema);
+            //it will change after index file system
+        }
       // Advance. 
       size -= chunk_size;
       offset += chunk_size;
