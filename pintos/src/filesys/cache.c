@@ -1,6 +1,7 @@
 #include "filesys/cache.h"
 #include "filesys/filesys.h"
 #include <string.h>
+#define WB_TIME 1000
 void init_bce(struct bce* b)
 {
     b->accessed = false;
@@ -34,6 +35,7 @@ void bc_init()
     {
         init_bce(&buffer_cache[i]);
     }
+    thread_create("bc_write_behind", PRI_DEFAULT, thread_func_write_behind, NULL);
 }
 int get_bce_idx(block_sector_t s, bool pin)
 {
@@ -108,8 +110,10 @@ int cache_evict()
         }
         if(buffer_cache[i].dirty)
         {
+            sema_down(&buffer_cache[i].rws);
             block_write(fs_device, buffer_cache[i].sector,
                     buffer_cache[i].data);
+            sema_up(&buffer_cache[i].rws);
         }
         flush_bce(&buffer_cache[i]);
         return i;
@@ -157,4 +161,41 @@ void cache_read(block_sector_t sector_idx,const uint8_t *buffer_, off_t ofs, off
     lock_release(&bc_lock);
 //    printf("bce read %d\n", idx);
     bce_read(&buffer_cache[idx], buffer, size, ofs);
+}
+void thread_func_write_behind(void* aux UNUSED)
+{
+    int i;
+    while(1)
+    {
+        timer_sleep(WB_TIME);
+        for(i=0;i<64;i++)
+        {
+            if(buffer_cache[i].dirty)
+            {
+                sema_down(&buffer_cache[i].rws);
+                block_write(fs_device, buffer_cache[i].sector, buffer_cache[i].data);
+                buffer_cache[i].dirty = false;
+                sema_up(&buffer_cache[i].rws);
+            }
+        }
+    }
+}
+void thread_func_read_ahead (void *aux)
+{
+    
+}
+void write_back_all()
+{
+    int i;
+    lock_acquire(&bc_lock);
+    for(i=0;i<64;i++)
+    {
+        if(buffer_cache[i].dirty)
+        {
+            block_write(fs_device, buffer_cache[i].sector, buffer_cache[i].data);
+            //flush_bce(&buffer_cache[i]);
+        }
+    }
+    lock_release(&bc_lock);
+
 }
