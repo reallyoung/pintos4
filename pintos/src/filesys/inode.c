@@ -22,7 +22,7 @@ struct BT{
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk
   {
-    block_sector_t start;               /* First data sector. */
+    block_sector_t start;               /* First data sector. *///now unused
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
     block_sector_t parent;
@@ -70,6 +70,7 @@ block_sector_t bt_index(block_sector_t s)
 {
     return s%BLOCK_ENTRY_NUM;
 }
+/*
 static block_sector_t
 byte_to_sector (const struct inode *inode, off_t pos) 
 {
@@ -79,6 +80,7 @@ byte_to_sector (const struct inode *inode, off_t pos)
   else
     return -1;
 }
+*/
 static block_sector_t
 bd_byte_to_sector (const struct inode *inode, off_t pos)
 {
@@ -191,6 +193,83 @@ IEND:
     free(temp);
     return success;
 
+}
+bool file_growth(struct inode* inode, size_t size)
+{
+    int old_bt_num = inode->bt_num;
+    int new_bt_num;
+    int add_bt_num;
+    int old_alloc_num = inode->alloc_num;
+    int new_alloc_num;
+    int add_alloc_num;
+    int add_sectors;
+    struct BT bt;
+    off_t length;
+    off_t new_length;
+    off_t how_much;
+    block_sector_t old_bt_index;
+    int i,j,k;
+    bool success = true;
+    block_sector_t *temp;
+    static char zeros[BLOCK_SECTOR_SIZE];
+    length = inode_length(inode);
+    how_much = size - length;
+    add_sectors = bytes_to_sectors(size) - bytes_to_sectors(length);
+    new_bt_num = bd_index(bytes_to_sectors(size)) + 1;
+    add_bt_num = new_bt_num - old_bt_num;
+    add_alloc_num = add_bt_num + add_sectors;
+    new_alloc_num = old_alloc_num + add_alloc_num;
+    temp = (block_sector_t*)malloc(sizeof(block_sector_t) * add_alloc_num);
+    for(i=0;i<add_alloc_num;i++)
+    {
+        if(!free_map_allocate(1,&temp[i]))
+        {
+            success = false;
+            for(i= i-1;i>=0;i--)
+              free_map_release(temp[i], 1);
+            goto FGEND;
+        }
+    }
+    old_bt_index = bt_index(bytes_to_sectors(length));
+    if(old_bt_index != BLOCK_ENTRY_NUM -1)
+    {
+        cache_read(inode->block_directory.bde[bd_index(length/BLOCK_SECTOR_SIZE)],
+            (uint8_t*)&bt, 0, BLOCK_SECTOR_SIZE);
+        i=0;
+        while(old_bt_index+i < BLOCK_ENTRY_NUM - 1)
+        {   
+         i++;
+         bt.bte[old_bt_index+i] = temp[--add_alloc_num];
+         block_write(fs_device,bt.bte[old_bt_index+i],zeros);
+        }//allocate partial segment in last bt
+        //update BT to disk
+        cache_write(inode->block_directory.bde[bd_index(length/BLOCK_SECTOR_SIZE)],
+            (uint8_t*)&bt, 0, BLOCK_SECTOR_SIZE);
+    }
+    for(i=0;i<add_bt_num;i++)
+    {
+        for(j = 0 ;j<BLOCK_ENTRY_NUM;j++)
+            bt.bte[j] = -1;
+        inode->block_directory.bde[old_bt_num+i] = temp[--add_alloc_num];
+        for(j=0;j<BLOCK_ENTRY_NUM&&add_alloc_num>0;j++)
+        {
+            bt.bte[j] = temp[--add_alloc_num];
+            block_write(fs_device,bt.bte[j],zeros);
+        }
+        block_write(fs_device,inode->block_directory.bde[old_bt_num-1+i],&bt);
+    }
+    //update bd
+    block_write(fs_device,inode->bd,&inode->block_directory);
+    //update inode
+    inode->bt_num = new_bt_num;
+    inode->alloc_num = new_alloc_num;
+    inode->data.bt_num = new_bt_num;
+    inode->data.alloc_num = new_alloc_num;
+    inode->data.length = size;
+    block_write(fs_device,inode->sector, &inode->data);
+FGEND:
+    free(temp);
+    return success;
 }
 /* Initializes an inode with LENGTH bytes of data and
    writes the new inode to sector SECTOR on the file system
@@ -346,7 +425,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
 
-  while (size > 0) 
+  while (size > 0 && offset<=inode_length(inode)) 
     {
       /* Disk sector to read, starting byte offset within sector. */
       block_sector_t sector_idx = bd_byte_to_sector (inode, offset);
@@ -386,12 +465,12 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
         {
             struct ra_elem *r;
             r = (struct ra_elem*)malloc(sizeof(struct ra_elem));
-            r->s = sector_idx + 1;
+            r->s = bd_byte_to_sector (inode, offset + chunk_size);
             lock_acquire(&ra_lock);
             list_push_back(&ra_list,&r->elem);
             lock_release(&ra_lock);
             sema_up(&ra_sema);
-            //it will change after index file system
+            // index file system
         }
       // Advance. 
       size -= chunk_size;
@@ -418,6 +497,14 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
   if (inode->deny_write_cnt)
     return 0;
+
+  if(offset+size > inode_length(inode))
+  {
+      if(offset+size > MAX_FILE_SIZE)
+          PANIC("two large file\n");
+      if(!file_growth(inode, offset + size))
+          PANIC("file_growth fail\n");
+  }
 
   while (size > 0) 
     {
