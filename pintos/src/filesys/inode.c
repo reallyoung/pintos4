@@ -64,11 +64,28 @@ struct inode
    POS. */
 block_sector_t bd_index(block_sector_t s)
 {
-    return s/(BLOCK_ENTRY_NUM);
+    if(s==0)
+        PANIC("no bdi for sector 0\n");
+    else
+        return DIV_ROUND_UP(s,BLOCK_ENTRY_NUM) - 1;
 }
 block_sector_t bt_index(block_sector_t s)
 {
-    return s%BLOCK_ENTRY_NUM;
+    if(s==0)
+        PANIC("no index for sector 0\n");
+    else
+        return (s-1)%BLOCK_ENTRY_NUM;
+}
+void dump_bt(struct BT* bt)
+{
+    int i;
+    printf("dump bt\n");
+    for(i=0;i<BLOCK_ENTRY_NUM;i++)
+        printf("%d. %d\n",i,bt->bte[i]);
+}
+block_sector_t b2s(off_t b)
+{
+    return (b/BLOCK_SECTOR_SIZE) + 1;
 }
 /*
 static block_sector_t
@@ -86,16 +103,28 @@ bd_byte_to_sector (const struct inode *inode, off_t pos)
 {
     struct BT bt;
     block_sector_t i;
-    i = bd_index(pos / BLOCK_SECTOR_SIZE);
+    int j;
+    i = bd_index(b2s(pos));
     ASSERT(inode != NULL);
-    if(pos< inode->data.length)
+    if(pos<= inode->data.length)
     {
        // printf("%d\n",i);
+        if(inode->block_directory.bde[i] == -1 )
+            PANIC("bde is -1\n");
         cache_read(inode->block_directory.bde[i], (uint8_t*)&bt, 0, BLOCK_SECTOR_SIZE);
-        return bt.bte[bt_index(pos / BLOCK_SECTOR_SIZE)];
+        if(bt.bte[bt_index(b2s(pos))] == -1)
+        {
+            printf("dump bt -1 bte is %d\n",bt_index(b2s(pos)));
+            for(j=0;j<BLOCK_ENTRY_NUM;j++)
+            printf("%d. %d\n",j,bt.bte[j]);
+        }
+        return bt.bte[bt_index(b2s(pos))];
     }
     else
+    {
+        PANIC("byond length byte\n");
         return -1;
+    }
 }
 /* List of open inodes, so that opening a single inode twice
    returns the same `struct inode'. */
@@ -145,7 +174,7 @@ bool install_bd (block_sector_t sector,struct inode_disk* di, block_sector_t s)
     block_sector_t *temp;
     static char zeros[BLOCK_SECTOR_SIZE];
     bool success = true;
-    bt_num = bd_index(s) + 1;
+    bt_num = DIV_ROUND_UP(s,BLOCK_ENTRY_NUM);
     alloc_num = 1 + bt_num + s; // bd + bt + data
     temp = (block_sector_t*)malloc(sizeof(block_sector_t) * alloc_num);
     for(i=0; i<alloc_num ; i++)//allocate frist
@@ -211,53 +240,87 @@ bool file_growth(struct inode* inode, size_t size)
     int i,j,k;
     bool success = true;
     block_sector_t *temp;
+    struct BD* bdp;
     static char zeros[BLOCK_SECTOR_SIZE];
     length = inode_length(inode);
     how_much = size - length;
     add_sectors = bytes_to_sectors(size) - bytes_to_sectors(length);
-    new_bt_num = bd_index(bytes_to_sectors(size)) + 1;
+    new_bt_num = DIV_ROUND_UP(bytes_to_sectors(size) , BLOCK_ENTRY_NUM);
     add_bt_num = new_bt_num - old_bt_num;
     add_alloc_num = add_bt_num + add_sectors;
     new_alloc_num = old_alloc_num + add_alloc_num;
     temp = (block_sector_t*)malloc(sizeof(block_sector_t) * add_alloc_num);
+    bdp= &inode->block_directory;
+   // printf("file_growth called add_alloc_num =%d, add_sectors=%d, add_bt_num=%d\n",add_alloc_num,add_sectors,add_bt_num);
+   // printf("\n");
+//   if(add_sectors> 1)
+//       PANIC("add_sectos = %d\n",add_sectors);
+  //  if(add_bt_num > 0)
+  //   printf("add_btnum %d, add_sector_num =%d, alloc %d\n",add_bt_num, add_sectors,add_alloc_num);
+
+    if(add_alloc_num == 0)
+        goto FGEND2;
     for(i=0;i<add_alloc_num;i++)
     {
         if(!free_map_allocate(1,&temp[i]))
         {
+            PANIC("allocate fail\n");
             success = false;
             for(i= i-1;i>=0;i--)
               free_map_release(temp[i], 1);
             goto FGEND;
         }
     }
-    old_bt_index = bt_index(bytes_to_sectors(length));
+    if(length == 0)
+        goto LENZERO; 
+
+
+   // printf("inode->data.bt_num = %d length =%d size = %d\n",inode->data.bt_num,inode->data.length, size);
+    old_bt_index = bt_index( b2s(length));
+   // printf("old_bt_index = %d, length = %d\n",old_bt_index,length);
+
     if(old_bt_index != BLOCK_ENTRY_NUM -1)
     {
-        cache_read(inode->block_directory.bde[bd_index(length/BLOCK_SECTOR_SIZE)],
+        cache_read(inode->block_directory.bde[bd_index(b2s(length))],
             (uint8_t*)&bt, 0, BLOCK_SECTOR_SIZE);
         i=0;
-        while(old_bt_index+i < BLOCK_ENTRY_NUM - 1)
+        while(old_bt_index+i < BLOCK_ENTRY_NUM - 1 && add_alloc_num >0)
         {   
          i++;
+       //  printf("i= %d, old_bt_idx= %d, alloc_num=%d, sector = %d\n",i,old_bt_index,add_alloc_num,temp[add_alloc_num -1]);
          bt.bte[old_bt_index+i] = temp[--add_alloc_num];
          block_write(fs_device,bt.bte[old_bt_index+i],zeros);
         }//allocate partial segment in last bt
+    /*    printf("check bde[%d]= %d\n",bd_index(length/BLOCK_SECTOR_SIZE)
+                ,inode->block_directory.bde[bd_index(length/BLOCK_SECTOR_SIZE)]);
+
+        dump_bt(&bt);
+        */
         //update BT to disk
-        cache_write(inode->block_directory.bde[bd_index(length/BLOCK_SECTOR_SIZE)],
+        cache_write(inode->block_directory.bde[bd_index(b2s(length))],
             (uint8_t*)&bt, 0, BLOCK_SECTOR_SIZE);
+    /*    cache_read(inode->block_directory.bde[bd_index(length/BLOCK_SECTOR_SIZE)-1],
+                (uint8_t*)&bt, 0, BLOCK_SECTOR_SIZE);
+        printf("dump -1\n");
+        dump_bt(&bt);
+    */
     }
+LENZERO:
+
     for(i=0;i<add_bt_num;i++)
     {
         for(j = 0 ;j<BLOCK_ENTRY_NUM;j++)
             bt.bte[j] = -1;
         inode->block_directory.bde[old_bt_num+i] = temp[--add_alloc_num];
-        for(j=0;j<BLOCK_ENTRY_NUM&&add_alloc_num>0;j++)
+        for(j=0;j<BLOCK_ENTRY_NUM && add_alloc_num>0;j++)
         {
             bt.bte[j] = temp[--add_alloc_num];
             block_write(fs_device,bt.bte[j],zeros);
         }
-        block_write(fs_device,inode->block_directory.bde[old_bt_num-1+i],&bt);
+        block_write(fs_device,inode->block_directory.bde[old_bt_num+i],&bt);
     }
+    if(add_alloc_num != 0)
+        PANIC("add_alloc_num = %d\n",add_alloc_num);
     //update bd
     block_write(fs_device,inode->bd,&inode->block_directory);
     //update inode
@@ -265,6 +328,9 @@ bool file_growth(struct inode* inode, size_t size)
     inode->alloc_num = new_alloc_num;
     inode->data.bt_num = new_bt_num;
     inode->data.alloc_num = new_alloc_num;
+    //for debug
+
+FGEND2:
     inode->data.length = size;
     block_write(fs_device,inode->sector, &inode->data);
 FGEND:
@@ -295,6 +361,7 @@ inode_create (block_sector_t sector, off_t length, int isdir)
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
       disk_inode->isdir = isdir;
+      //printf("create length is %d sectors = %d\n",length,sectors);
       //have to change
       /*
       if (free_map_allocate (sectors, &disk_inode->start)) 
@@ -502,6 +569,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   {
       if(offset+size > MAX_FILE_SIZE)
           PANIC("two large file\n");
+  //    printf("size-length in write = %d\n", offset+size - inode_length(inode));
       if(!file_growth(inode, offset + size))
           PANIC("file_growth fail\n");
   }

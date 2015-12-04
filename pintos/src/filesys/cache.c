@@ -44,6 +44,8 @@ void bc_init()
 int get_bce_idx(block_sector_t s, bool pin)
 {
     int i;
+    if(s == -1)
+        PANIC("want sector -1\n");
     for(i=0; i<64;i++)
     {
       if(buffer_cache[i].valid && buffer_cache[i].sector == s)
@@ -62,6 +64,8 @@ void get_from_block(block_sector_t s,int idx)
     block_read(fs_device, s, buffer_cache[idx].data);
     buffer_cache[idx].valid = true;
    // buffer_cache[idx].pinned = true;
+    if(s == -1)
+        PANIC("sector == -1 get fr block \n");
     buffer_cache[idx].sector = s;
 }
 void bce_read(struct bce* b,const uint8_t* buffer_, off_t size, off_t ofs)
@@ -115,6 +119,7 @@ int cache_evict()
         if(buffer_cache[i].dirty)
         {
             sema_down(&buffer_cache[i].rws);
+            //printf("evict sector %d\n",buffer_cache[i].sector);
             block_write(fs_device, buffer_cache[i].sector,
                     buffer_cache[i].data);
             sema_up(&buffer_cache[i].rws);
@@ -142,6 +147,8 @@ void cache_write(block_sector_t sector_idx, const uint8_t *buffer_, off_t ofs, o
         else
         {
             buffer_cache[idx].valid = true;
+            if(buffer_cache[idx].sector == -1)
+                PANIC("sector == -1\n");
             buffer_cache[idx].sector = sector_idx;
             buffer_cache[idx].pinned = true;
         }
