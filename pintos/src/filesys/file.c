@@ -32,7 +32,8 @@ file_open (struct inode *inode)
       return NULL; 
     }
 }
-
+struct inode* get_finode(struct file* f)
+{return f->inode;}
 /* Opens and returns a new file for the same inode as FILE.
    Returns a null pointer if unsuccessful. */
 struct file *

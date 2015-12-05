@@ -47,10 +47,15 @@ bool
 filesys_create (const char *name, off_t initial_size) 
 {
   block_sector_t inode_sector = 0;
-  struct dir *dir = dir_open_root ();
-  bool success = (dir != NULL
+  if(thread_current()->wd == NULL)
+    thread_current()->wd = dir_open_root();
+      //PANIC("thread->wd is NULL name %s\n",name);
+ //struct dir *dir = dir_open_root ();
+ struct dir *dir = dir_reopen(thread_current()->wd);
+ bool success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
-                  && inode_create (inode_sector, initial_size, 0)
+                  && inode_create (inode_sector, initial_size, 0,
+                      get_sector(get_dinode(dir)))
                   && dir_add (dir, name, inode_sector));
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
@@ -58,7 +63,30 @@ filesys_create (const char *name, off_t initial_size)
 
   return success;
 }
+bool my_chdir(const char* dir)
+{
+    struct thread *t;
+    t=thread_current();
 
+}
+bool
+my_mkdir (const char *name, off_t initial_size) 
+{
+  block_sector_t inode_sector = 0;
+  //struct dir *dir = dir_open_root ();
+  struct dir *dir = dir_reopen(thread_current()->wd);
+  if(thread_current()->wd == NULL)
+      PANIC("thread->wd is NULL\n");
+  bool success = (dir != NULL
+                  && free_map_allocate (1, &inode_sector)
+                  && inode_create (inode_sector, initial_size, 1,
+                      get_sector(get_dinode(dir)))
+                  && dir_add (dir, name, inode_sector));
+  if (!success && inode_sector != 0) 
+    free_map_release (inode_sector, 1);
+  dir_close (dir);
+  return success;
+}
 /* Opens the file with the given NAME.
    Returns the new file if successful or a null pointer
    otherwise.

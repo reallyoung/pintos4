@@ -115,7 +115,7 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
-
+//  initial_thread->wd = NULL;
   if (thread_mlfqs){
     initial_thread->fixed_recent_cpu = conv2fixed(0);
     initial_thread->nice = 0;
@@ -283,6 +283,9 @@ thread_create (const char *name, int priority,
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
   sf->ebp = 0;
+
+  if(thread_current()->wd != NULL)
+    t->wd = dir_reopen(thread_current()->wd);
 
   intr_set_level (old_level);
 
@@ -638,6 +641,7 @@ init_thread (struct thread *t, const char *name, int priority)
 
   memset (&t->fd_list, 0, (sizeof(struct file*)) * FD_MAX);
   t->fd_num = 2;
+  t->wd = NULL;
   list_push_back (&all_list, &t->allelem);
 }
 

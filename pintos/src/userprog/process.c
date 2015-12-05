@@ -17,7 +17,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
-
+#include "filesys/directory.h"
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 void push_arg_str (void **esp, char *str, int length);
@@ -117,6 +117,8 @@ start_process (void *file_name_)
     push_arg_addr (&if_.esp, &argv_addr);
     push_arg_addr (&if_.esp, &args_num);
     push_arg_addr (&if_.esp, &imNULL);
+    if(thread_current()->wd == NULL)
+        thread_current()->wd = dir_open_root();
 //    hex_dump (0xc0000000-0x40, 0xc0000000-0x40, 0x40, true);
     palloc_free_page (file_name);
   }

@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "threads/synch.h"
 #include "filesys/file.h"
+#include "filesys/directory.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -83,6 +84,7 @@ typedef int tid_t;
    only because they are mutually exclusive: only a thread in the
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
+struct dir;
 struct thread
   {
     /* Owned by thread.c. */
@@ -127,6 +129,8 @@ struct thread
     struct file *fd_list[FD_MAX];
     int fd_num; 
     struct file *open_file;
+
+    struct dir* wd;//working directory
   };
 
 /* If false (default), use round-robin scheduler.

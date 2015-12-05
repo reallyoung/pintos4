@@ -34,7 +34,7 @@ static bool sys_chdir(const char *dir, struct intr_frame *f);
 static bool sys_mkdir(const char *dir, struct intr_frame *f);
 static bool sys_readdir(int fd, char *name, struct intr_frame *f);
 static bool sys_isdir(int fd, struct intr_frame *f);
-static bool sys_inumber(int fd, struct intr_frame *f);
+static int sys_inumber(int fd, struct intr_frame *f);
 
 void
 syscall_init (void) 
@@ -340,21 +340,38 @@ sys_read (int fd, void *buffer_, unsigned size, struct intr_frame *f)
 }
 static bool sys_chdir(const char *dir, struct intr_frame *f)
 {
-
+    return f->eax = my_chdir(dir);
 }
 static bool sys_mkdir(const char *dir, struct intr_frame *f)
 {
-
+    if(dir[0] == '\0')
+        return f->eax = false;
+    return f->eax = my_mkdir(dir,0);
 }
 static bool sys_readdir(int fd, char *name, struct intr_frame *f)
 {
+    bool success;
+    struct thread *t= thread_current();
+    if(t->fd_list[fd] ==NULL)
+        return f->eax= false;
+    if(!get_isdir(get_finode(t->fd_list[fd])))
+        return f->eax = false;
+    
+    success = dir_readdir((struct dir*)t->fd_list[fd], name);
 
+    return f->eax = success;
 }
 static bool sys_isdir(int fd, struct intr_frame *f)
 {
-
+    struct thread *t= thread_current();
+    if(t->fd_list[fd] ==NULL)
+        return f->eax= false;
+    return f->eax = get_isdir(get_finode(t->fd_list[fd]));
 }
-static bool sys_inumber(int fd, struct intr_frame *f)
+static int sys_inumber(int fd, struct intr_frame *f)
 {
-
+    struct thread *t= thread_current();
+    if(t->fd_list[fd] ==NULL)
+        return f->eax= false;
+    return f->eax = get_sector(get_finode(t->fd_list[fd]));
 }

@@ -11,6 +11,7 @@ struct dir
   {
     struct inode *inode;                /* Backing store. */
     off_t pos;                          /* Current position. */
+    bool fake_deny_write;//for casting from struct file
   };
 
 /* A single directory entry. */
@@ -21,14 +22,15 @@ struct dir_entry
     bool in_use;                        /* In use or free? */
   //  uint8_t unused[12];
   };
-
+struct inode* get_dinode(struct dir* d)
+{return d->inode;}
 /* Creates a directory with space for ENTRY_CNT entries in the
    given SECTOR.  Returns true if successful, false on failure. */
 bool
 dir_create (block_sector_t sector, size_t entry_cnt)
 {
 //    printf("cr size %d\n",entry_cnt * sizeof (struct dir_entry));
-  return inode_create (sector, entry_cnt * sizeof (struct dir_entry),1);
+  return inode_create (sector, entry_cnt * sizeof (struct dir_entry),1,ROOT_DIR_SECTOR);
 }
 
 /* Opens and returns the directory for the given INODE, of which

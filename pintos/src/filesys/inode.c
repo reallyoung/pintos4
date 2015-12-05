@@ -57,7 +57,14 @@ struct inode
     struct inode_disk data;             /* Inode content. */
     struct BD block_directory;
   };
-
+bool get_isdir(struct inode* i)
+{
+    return (bool)i->isdir;
+}
+block_sector_t get_sector(struct inode* i)
+{
+    return i->sector;
+}
 /* Returns the block device sector that contains byte offset POS
    within INODE.
    Returns -1 if INODE does not contain data for a byte at offset
@@ -351,7 +358,7 @@ FGEND:
    Returns true if successful.
    Returns false if memory or disk allocation fails. */
 bool
-inode_create (block_sector_t sector, off_t length, int isdir)
+inode_create (block_sector_t sector, off_t length, int isdir,block_sector_t parent)
 {
   struct inode_disk *disk_inode = NULL;
   bool success = false;
@@ -370,6 +377,7 @@ inode_create (block_sector_t sector, off_t length, int isdir)
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
       disk_inode->isdir = isdir;
+      disk_inode->parent = parent;
       //printf("create length is %d sectors = %d\n",length,sectors);
       //have to change
       /*
