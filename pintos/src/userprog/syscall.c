@@ -30,6 +30,11 @@ static int sys_filesize (int fd, struct intr_frame *f);
 static void sys_seek (int fd, unsigned position, struct intr_frame *f);
 static unsigned sys_tell (int fd, struct intr_frame *f);
 static void sys_close (int fd, struct intr_frame *f);
+static bool sys_chdir(const char *dir, struct intr_frame *f);
+static bool sys_mkdir(const char *dir, struct intr_frame *f);
+static bool sys_readdir(int fd, char *name, struct intr_frame *f);
+static bool sys_isdir(int fd, struct intr_frame *f);
+static bool sys_inumber(int fd, struct intr_frame *f);
 
 void
 syscall_init (void) 
@@ -113,6 +118,30 @@ syscall_handler (struct intr_frame *f)
     esp_under_phys_base(f, 1);
     check_fd(*((int *)f->esp + 1), 0, f)
     sys_close (*((int *)f->esp + 1), f);
+  case SYS_CHDIR:
+    esp_under_phys_base(f, 1);
+    
+    sys_chdir (*((int **)f->esp + 1), f);
+    break;
+  case SYS_MKDIR:
+    esp_under_phys_base(f, 1);
+    
+    sys_mkdir (*((int **)f->esp + 1), f);
+    break;
+  case SYS_READDIR:
+    esp_under_phys_base(f, 2);
+
+    sys_readdir (*((int *)f->esp + 1),*((int**)f->esp + 2), f);
+    break;
+  case SYS_ISDIR:
+    esp_under_phys_base(f, 1);
+
+    sys_isdir (*((int *)f->esp + 1), f);
+    break;
+  case SYS_INUMBER:
+    esp_under_phys_base(f, 1);
+
+    sys_inumber (*((int *)f->esp + 1), f);
     break;
   }
 }
@@ -198,6 +227,7 @@ sys_open (void *file_, struct intr_frame *f)
   else{
     struct thread *t = thread_current();
     if (t->fd_num >= FD_MAX){
+        PANIC("FD_MAX is too small\n");
       f->eax = -1;
       return -1;
     }
@@ -307,4 +337,24 @@ sys_read (int fd, void *buffer_, unsigned size, struct intr_frame *f)
       f->eax = file_read (t->fd_list[fd], buffer, size);
   }
   return f->eax;
+}
+static bool sys_chdir(const char *dir, struct intr_frame *f)
+{
+
+}
+static bool sys_mkdir(const char *dir, struct intr_frame *f)
+{
+
+}
+static bool sys_readdir(int fd, char *name, struct intr_frame *f)
+{
+
+}
+static bool sys_isdir(int fd, struct intr_frame *f)
+{
+
+}
+static bool sys_inumber(int fd, struct intr_frame *f)
+{
+
 }
