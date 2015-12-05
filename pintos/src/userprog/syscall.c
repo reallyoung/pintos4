@@ -13,7 +13,7 @@
 #include "devices/shutdown.h"
 
 #include "threads/vaddr.h"
-
+#include <string.h>
 #define under_phys_base(addr) if((void*)addr >= PHYS_BASE) sys_exit(-1);
 #define esp_under_phys_base(f, args_num) under_phys_base(((int*)(f->esp)+args_num+1))
 #define check_fd(fd, fail, f) if(fd < 0 || fd >= FD_MAX) {f->eax = fail; break;}
@@ -344,8 +344,9 @@ static bool sys_chdir(const char *dir, struct intr_frame *f)
 }
 static bool sys_mkdir(const char *dir, struct intr_frame *f)
 {
-    if(dir[0] == '\0')
+    if(dir[0] == '\0'||strcmp(dir,"/") == 0)
         return f->eax = false;
+
     return f->eax = my_mkdir(dir,0);
 }
 static bool sys_readdir(int fd, char *name, struct intr_frame *f)

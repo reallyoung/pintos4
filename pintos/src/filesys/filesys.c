@@ -7,6 +7,7 @@
 #include "filesys/inode.h"
 #include "filesys/directory.h"
 #include "filesys/cache.h"
+#include <string.h>
 /* Partition that contains the file system. */
 struct block *fs_device;
 
@@ -35,8 +36,32 @@ filesys_init (bool format)
 void
 filesys_done (void) 
 {
-//  write_back_all();
+  write_back_all();
   free_map_close ();
+}
+void last_name(const char* src, char** dest)
+{
+    int i;
+    char *c; 
+    int size;
+    size = strlen(src);
+if(size>=2)
+    for(i = size-1; i>=0; i++)
+    {
+        if(src[i] =='/')
+        {   
+            *dest = &src[i+1];
+            return;
+        }
+    }
+
+    *dest = src;
+
+}
+struct dir* find_dir(const char* name)
+{
+
+
 }
 
 /* Creates a file named NAME with the given INITIAL_SIZE.
@@ -51,7 +76,7 @@ filesys_create (const char *name, off_t initial_size)
     thread_current()->wd = dir_open_root();
       //PANIC("thread->wd is NULL name %s\n",name);
  //struct dir *dir = dir_open_root ();
- struct dir *dir = dir_reopen(thread_current()->wd);
+ struct dir *dir = dir_reopen(thread_current()->wd);//open current dir
  bool success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
                   && inode_create (inode_sector, initial_size, 0,
@@ -67,16 +92,19 @@ bool my_chdir(const char* dir)
 {
     struct thread *t;
     t=thread_current();
-
+    
 }
 bool
 my_mkdir (const char *name, off_t initial_size) 
 {
   block_sector_t inode_sector = 0;
   //struct dir *dir = dir_open_root ();
-  struct dir *dir = dir_reopen(thread_current()->wd);
+  struct dir *dir = //find_dir(name);
+      dir_reopen(thread_current()->wd);
   if(thread_current()->wd == NULL)
       PANIC("thread->wd is NULL\n");
+  char *name_;
+  last_name(name,&name_);
   bool success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
                   && inode_create (inode_sector, initial_size, 1,
