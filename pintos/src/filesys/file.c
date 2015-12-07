@@ -23,6 +23,7 @@ file_open (struct inode *inode)
       file->inode = inode;
       file->pos = 0;
       file->deny_write = false;
+  //    printf("11 inode sector = %d\n",get_sector(inode));
       return file;
     }
   else
@@ -48,9 +49,13 @@ file_close (struct file *file)
 {
   if (file != NULL)
     {
+      //  printf("hi\n");
       file_allow_write (file);
+//      printf("2 inode sector = %d\n",get_sector(file->inode));
       inode_close (file->inode);
-      free (file); 
+//      printf("2 inode sector = %d\n",get_sector(file->inode));
+      free (file);
+//      printf("123\n");
     }
 }
 

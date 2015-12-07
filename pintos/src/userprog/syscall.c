@@ -69,10 +69,12 @@ syscall_handler (struct intr_frame *f)
     sys_wait (*((int *)f->esp + 1), f);
     break;
   case SYS_CREATE:
+//    printf("why?\n");
     if ((void*)*((int **)f->esp + 1) == NULL)
       sys_exit(-1);
     esp_under_phys_base(f, 2);
     under_phys_base (*((int **)f->esp + 1));
+//    printf("123\n");
     sys_create (*((int **)f->esp + 1), *((int *)f->esp + 2), f);
     break;
   case SYS_REMOVE:
@@ -118,6 +120,7 @@ syscall_handler (struct intr_frame *f)
     esp_under_phys_base(f, 1);
     check_fd(*((int *)f->esp + 1), 0, f)
     sys_close (*((int *)f->esp + 1), f);
+    break;
   case SYS_CHDIR:
     esp_under_phys_base(f, 1);
     
@@ -174,7 +177,7 @@ sys_exit (int status)
   //unblock parent
   sema_down (&t->kill_this);
   //kill_this will up when parent get exit_code succefully
-
+//PANIC("asjdjasd\n");
   file_allow_write (t->open_file); 
   file_close (t->open_file); 
   thread_exit();
@@ -201,6 +204,7 @@ static bool
 sys_create (void *file_, unsigned initial_size, struct intr_frame *f)
 {
   bool success;
+//  printf("called cr\n");
   success = filesys_create ((char*)file_, initial_size);
   f->eax = (uint32_t) success;
   return success;
@@ -291,7 +295,9 @@ sys_close (int fd, struct intr_frame *f UNUSED)
   ASSERT (fd >= 0 && fd < FD_MAX);
   if (t->fd_list[fd] != NULL){
     file_close (t->fd_list[fd]);
+//    printf("reach here\n");
     t->fd_list[fd]=NULL;
+//    printf("reach here2\n");
   }
 }
 
@@ -344,7 +350,8 @@ static bool sys_chdir(const char *dir, struct intr_frame *f)
 }
 static bool sys_mkdir(const char *dir, struct intr_frame *f)
 {
-    if(dir[0] == '\0'||strcmp(dir,"/") == 0)
+    if(dir[0] == '\0'||strcmp(dir,"/") == 0||
+            strcmp(dir,".") == 0 || strcmp(dir,"..") == 0)
         return f->eax = false;
 
     return f->eax = my_mkdir(dir,0);

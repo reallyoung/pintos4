@@ -352,6 +352,10 @@ FGEND:
     free(temp);
     return success;
 }
+struct inode* get_parent_inode(struct inode* i)
+{   
+    return inode_open(i->parent);
+}
 /* Initializes an inode with LENGTH bytes of data and
    writes the new inode to sector SECTOR on the file system
    device.
