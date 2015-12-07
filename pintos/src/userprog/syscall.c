@@ -305,10 +305,9 @@ static int
 sys_write (int fd, void *buffer_, unsigned size, struct intr_frame *f)
 {
   char *buffer = (char*)buffer_;
-
   ASSERT (fd >= 0 && fd < FD_MAX);
 //  printf("---------------------\n%d, %s, %d---------------------\n", fd, buffer, size);
-  if (fd == 1){
+ if (fd == 1){
     putbuf(buffer, size);
     f->eax = size;
   }
@@ -318,6 +317,8 @@ sys_write (int fd, void *buffer_, unsigned size, struct intr_frame *f)
       f->eax = -1;
     }
     else{
+      if(get_isdir(get_finode(t->fd_list[fd])))
+        return f->eax = -1; 
       f->eax = file_write (t->fd_list[fd], buffer_, size); 
     }
   }

@@ -91,6 +91,9 @@ struct dir* find_dir(const char* name)
     nt = strtok_r(NULL, "/",&save_ptr);
     if(nt == NULL)
     {
+        inode = get_parent_inode(get_dinode(cwd));
+            if(!inode)
+                return NULL;
         return cwd;
     }
     do
@@ -307,6 +310,8 @@ filesys_open (const char *name)
       {
           return (struct file*)dir;
       }
+      else if(!strcmp(lname,"/"))
+          return (struct file*)dir;
       else
       {
 //          printf("here2 dir sector= %d, lname = '%s'\n",
@@ -330,10 +335,13 @@ filesys_remove (const char *name)
   struct dir *dir;// = dir_open_root ();
   char lname[NAME_MAX+1];
   bool success;
+  struct inode* inode;
   dir=find_dir(name);
   last_name(name,lname);
-  success = dir != NULL && dir_remove (dir, lname);
+  dir_lookup(dir,lname,&inode);
  
+  success = dir != NULL && dir_remove (dir, lname);
+
   dir_close (dir); 
 
   return success;

@@ -204,6 +204,8 @@ dir_remove (struct dir *dir, const char *name)
   inode = inode_open (e.inode_sector);
   if (inode == NULL)
     goto done;
+  if(get_isdir(inode) && !dir_isempty(inode))
+      goto done;
 
   /* Erase directory entry. */
   e.in_use = false;
@@ -237,4 +239,18 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
         } 
     }
   return false;
+}
+bool dir_isempty(struct inode* inode)
+{
+    off_t ofs;
+    struct dir_entry e;
+    bool empty = true;
+  for (ofs = 0; inode_read_at (inode, &e, sizeof e, ofs) == sizeof e;
+       ofs += sizeof e) 
+    if (!e.in_use)
+    {
+        empty = false;
+    }
+    
+  return empty;
 }
