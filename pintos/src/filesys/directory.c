@@ -247,7 +247,7 @@ bool dir_isempty(struct inode* inode)
     bool empty = true;
   for (ofs = 0; inode_read_at (inode, &e, sizeof e, ofs) == sizeof e;
        ofs += sizeof e) 
-    if (!e.in_use)
+    if (e.in_use)
     {
         empty = false;
     }
